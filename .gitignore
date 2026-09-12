@@ -1,0 +1,24 @@
+.workbuddy/
+screenshots/
+ai-debate-assets/
+ai-debate-seated-assets/
+ai-debate-homepage-hero-16x9.png
+ai-debate-single-roundtable.png
+
+# Keep only the assets used by the current page.
+public/assets/*
+!public/assets/kanshan-wave.gif
+!public/assets/kanshan-thinking.gif
+!public/assets/single-roundtable.png
+!public/assets/character-orange-hoodie-seated-default.png
+!public/assets/character-orange-hoodie-seated-speaking.png
+!public/assets/character-orange-hoodie-seated-thinking.png
+!public/assets/character-green-hoodie-seated-default.png
+!public/assets/character-green-hoodie-seated-speaking.png
+!public/assets/character-green-hoodie-seated-thinking.png
+!public/assets/character-yellow-sweater-seated-default.png
+!public/assets/character-yellow-sweater-seated-speaking.png
+!public/assets/character-yellow-sweater-seated-thinking.png
+!public/assets/character-pink-sweater-seated-default.png
+!public/assets/character-pink-sweater-seated-speaking.png
+!public/assets/character-pink-sweater-seated-thinking.png

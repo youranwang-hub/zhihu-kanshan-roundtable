@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>看山圆桌</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="onboarding" id="onboarding" aria-label="开始一场圆桌讨论">
+        <div class="onboarding-card" id="question-step">
+          <p class="eyebrow">Kanshan roundtable</p>
+          <h1>把一个值得讨论的问题，交给多元观点。</h1>
+          <p>刘看山会从知乎真实讨论中召集不同立场，让你理解答案背后的理由与边界。</p>
+          <form id="question-form">
+            <label for="question-input">你想讨论什么？</label>
+            <textarea id="question-input" rows="3" placeholder="例如：AI 编程工具普及后，初学者还应系统学习编程基础吗？"></textarea>
+            <button class="onboarding-primary" type="submit">下一步：选择讨论方式</button>
+          </form>
+        </div>
+        <div class="onboarding-card is-hidden" id="mode-step">
+          <button class="back-button" id="back-to-question" type="button">← 修改问题</button>
+          <p class="eyebrow">Step 2 of 2</p>
+          <h1>你想如何参与？</h1>
+          <div class="mode-options">
+            <button class="mode-option" id="observer-mode" type="button"><strong>置身事外</strong><span>旁听三方立论；第二回合可随时 @ 角色插话、追问。</span></button>
+            <button class="mode-option" id="participant-mode" type="button"><strong>置身其中</strong><span>作为第四席入座；写下初始立场，并在辩论中接受回应。</span></button>
+          </div>
+          <form class="initial-view is-hidden" id="initial-view-form">
+            <label for="initial-view-input">先写下你的初始观点</label>
+            <textarea id="initial-view-input" rows="3" placeholder="我认为……"></textarea>
+            <button class="onboarding-primary" type="submit">带着我的立场入席</button>
+          </form>
+        </div>
+      </section>
+
+      <header class="topbar is-hidden">
+        <a class="brand" href="#" aria-label="看山圆桌首页">
+          <span class="brand-mark">知</span>
+          <span>看山圆桌</span>
+        </a>
+        <div class="topic"><span class="topic-label">本场问题</span><span id="topic-question">AI 编程工具普及后，初学者还应系统学习编程基础吗？</span></div>
+        <span class="round-label">第 1 / 3 回合 · 立场陈述</span>
+      </header>
+
+      <div class="debate-layout is-hidden">
+      <section class="roundtable-scene" aria-label="看山圆桌场景">
+        <img class="table-art" src="public/assets/single-roundtable.png" alt="圆桌" />
+        <div class="wall-grain"></div>
+        <div class="wall-lamp lamp-left" aria-hidden="true"></div>
+        <div class="wall-lamp lamp-right" aria-hidden="true"></div>
+        <div class="bookshelf shelf-left" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span></div>
+        <div class="bookshelf shelf-right" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span></div>
+
+        <section class="host-panel" aria-label="主持人刘看山">
+          <img id="host-image" src="public/assets/kanshan-wave.gif" alt="刘看山正在主持圆桌" />
+          <div class="host-copy">
+            <p class="eyebrow">主持人 · 刘看山</p>
+            <p id="host-message">今天有三种值得认真讨论的声音，请大家先阐明立场。</p>
+          </div>
+        </section>
+
+        <div class="scene-heading">
+          <p class="eyebrow">Kanshan roundtable</p>
+          <h1>观点已入席</h1>
+          <p>不同答案，不止一种理解方式。</p>
+        </div>
+
+        <button class="seat seat-a is-speaking" data-seat="a" type="button" aria-pressed="true">
+          <span class="seat-status" data-tone="a">● 正在发言</span>
+          <span class="character-frame"><img class="character" src="public/assets/character-orange-hoodie-seated-speaking.png" data-default="public/assets/character-orange-hoodie-seated-default.png" data-speaking="public/assets/character-orange-hoodie-seated-speaking.png" data-thinking="public/assets/character-orange-hoodie-seated-thinking.png" alt="基础优先派角色" /></span>
+          <span class="avatar avatar-a">基</span>
+          <span class="seat-card"><strong>基础优先派</strong><small>理解与验证优先</small><em>引用 3 篇知乎回答</em></span>
+        </button>
+        <button class="seat seat-b" data-seat="b" type="button" aria-pressed="false">
+          <span class="seat-status" data-tone="b">● 正在发言</span>
+          <span class="character-frame"><img class="character" src="public/assets/character-green-hoodie-seated-default.png" data-default="public/assets/character-green-hoodie-seated-default.png" data-speaking="public/assets/character-green-hoodie-seated-speaking.png" data-thinking="public/assets/character-green-hoodie-seated-thinking.png" alt="工具实践派角色" /></span>
+          <span class="avatar avatar-b">实</span>
+          <span class="seat-card"><strong>工具实践派</strong><small>项目与反馈驱动</small><em>引用 4 篇知乎回答</em></span>
+        </button>
+        <button class="seat seat-c" data-seat="c" type="button" aria-pressed="false">
+          <span class="seat-status" data-tone="c">● 正在发言</span>
+          <span class="character-frame"><img class="character" src="public/assets/character-yellow-sweater-seated-default.png" data-default="public/assets/character-yellow-sweater-seated-default.png" data-speaking="public/assets/character-yellow-sweater-seated-speaking.png" data-thinking="public/assets/character-yellow-sweater-seated-thinking.png" alt="双轨整合派角色" /></span>
+          <span class="avatar avatar-c">衡</span>
+          <span class="seat-card"><strong>双轨整合派</strong><small>实践中补基础</small><em>引用 3 篇知乎回答</em></span>
+        </button>
+
+        <button class="user-seat" type="button" id="user-seat">
+          <span class="seat-status" data-tone="user">✎ 你的回合</span>
+          <span class="character-frame"><img class="character" src="public/assets/character-pink-sweater-seated-default.png" data-default="public/assets/character-pink-sweater-seated-default.png" data-speaking="public/assets/character-pink-sweater-seated-speaking.png" data-thinking="public/assets/character-pink-sweater-seated-thinking.png" alt="你的角色" /></span>
+          <span class="user-info"><strong>你的席位</strong><small id="user-seat-subtitle">写下初始观点后入席</small></span>
+        </button>
+
+        <p class="seat-legend"><span></span> 已点亮 3 个观点席 · 你将作为第四席参与</p>
+
+        <div class="scene-controls" aria-label="圆桌控制">
+          <button type="button" id="toggle-host">刘看山提示</button>
+          <button type="button" id="focus-mode">聚焦发言者</button>
+        </div>
+      </section>
+
+      <aside class="debate-panel" aria-label="圆桌实时对话">
+        <header class="panel-header">
+          <div>
+            <p class="eyebrow">Roundtable log</p>
+            <h2>实时对话</h2>
+          </div>
+          <div class="panel-actions"><button id="refresh-sources" type="button">刷新知乎来源</button><span class="mode-badge">置身其中</span></div>
+        </header>
+
+        <nav class="round-steps" aria-label="讨论回合">
+          <button class="round-step is-current" data-round="1" type="button"><b>1</b><span>陈述</span></button>
+          <i></i>
+          <button class="round-step" data-round="2" type="button"><b>2</b><span>质询</span></button>
+          <i></i>
+          <button class="round-step" data-round="3" type="button"><b>3</b><span>总结</span></button>
+        </nav>
+
+        <section class="round-guide" id="round-guide" data-round="1" aria-live="polite">
+          <span class="guide-step" id="guide-step">第 1 回合 · 立场陈述</span>
+          <p class="guide-text" id="guide-text">先向三位嘉宾亮明你的立场，再听他们的开场陈述。</p>
+          <div class="guide-tips" id="guide-tips">
+            <div class="guide-tip">✍️ 在下方输入框写下你的<b>初始观点</b>，然后发送。</div>
+            <div class="guide-tip">💡 可以点击任一角色查看他们的<b>核心立场</b>和引用来源。</div>
+          </div>
+        </section>
+
+        <div class="conversation" id="conversation" aria-live="polite">
+          <article class="message message-host"><span class="message-name">刘看山</span><p>第一回合开始。请每一席先说清楚：你主张什么，依据是什么？</p></article>
+          <article class="message" data-seat="a"><div class="message-top"><span class="message-name">基础优先派</span><button class="citation" data-evidence="a" type="button">引用 3 篇知乎回答</button></div><p>基础不是为了绕开工具，而是为了能判断、调试并修正工具给出的答案。</p></article>
+          <article class="message" data-seat="b"><div class="message-top"><span class="message-name">工具实践派</span><button class="citation" data-evidence="b" type="button">引用 4 篇知乎回答</button></div><p>先进入真实任务，在反馈中补齐知识缺口，学习才不会脱离实际。</p></article>
+          <article class="message" data-seat="c"><div class="message-top"><span class="message-name">双轨整合派</span><button class="citation" data-evidence="c" type="button">引用 3 篇知乎回答</button></div><p>让项目驱动学习，但每个功能完成后都要补上相应的原理与验证方式。</p></article>
+        </div>
+
+        <div class="round-note" id="round-note">请先写下你的初始观点，作为第四席进入圆桌。</div>
+        <form class="composer" id="composer">
+          <label class="sr-only" for="user-input">输入你的观点</label>
+          <textarea id="user-input" rows="3" placeholder="我认为……例如：先用 AI 完成项目，再针对项目补基础。"></textarea>
+          <div class="composer-actions">
+            <span id="composer-hint">第一回合 · 需要你的立场</span>
+            <button class="primary-action" id="send-button" type="submit">发表立场</button>
+          </div>
+        </form>
+        <button class="next-round" id="next-round" type="button" disabled>完成第一回合后继续</button>
+
+        <section class="evidence-drawer" id="evidence-drawer" aria-label="知乎证据抽屉" aria-hidden="true">
+          <header><div><p class="eyebrow">Evidence from Zhihu</p><h3 id="drawer-title">基础优先派 · 关键依据</h3></div><button id="close-drawer" type="button" aria-label="关闭证据抽屉">×</button></header>
+          <p id="drawer-claim" class="drawer-claim"></p>
+          <div id="drawer-sources" class="source-list"></div>
+          <div class="drawer-boundary"><strong>适用边界</strong><p id="drawer-boundary-text"></p></div>
+        </section>
+      </aside>
+      </div>
+    </main>
+    <div class="toast-stack" id="toast-stack" aria-live="polite" aria-atomic="false"></div>
+    <script src="app.js"></script>
+  </body>
+</html>

@@ -25,6 +25,13 @@ const debateLayout = document.querySelector('.debate-layout');
 const mentionPicker = document.querySelector('#mention-picker');
 const mentionChips = document.querySelectorAll('.mention-chip');
 const refreshButton = document.querySelector('#refresh-sources');
+// Load all supplied poses before their turn, avoiding a blank image on first speech.
+document.querySelectorAll('.character').forEach(character => {
+  for (const pose of ['default', 'thinking', 'speaking']) {
+    const image = new Image();
+    image.src = character.dataset[pose];
+  }
+});
 let round = 1;
 let userHasSpoken = false;
 let userHasQuestioned = false;
@@ -106,11 +113,13 @@ function stopWaiting() {
 // Pace cached/validated speeches, and smooth real network deltas with the same renderer.
 function createWriter(article, id) {
   const paragraph = article.querySelector('p');
-  let buffer = '';
+  let buffer = [];
   let shown = 0;
   let finished = false;
   let resolve;
   let speaking = false;
+  let nextCharacterAt = performance.now() + 400;
+  setSeatSpeaking(id, 'thinking');
   const done = new Promise(r => { resolve = r; });
   paragraph.textContent = '';
   article.classList.add('is-streaming');
@@ -118,20 +127,24 @@ function createWriter(article, id) {
   const tick = () => {
     const follow = conversation.scrollHeight - conversation.scrollTop - conversation.clientHeight < 90;
     const instant = skipSpeech || matchMedia('(prefers-reduced-motion: reduce)').matches || document.hidden;
-    shown = Math.min(buffer.length, instant ? buffer.length : shown + 2);
-    if (buffer && !speaking) { speaking = true; setSeatSpeaking(id); hostMessage.textContent = `${roleNames[id]}正在发言，先听听这一席的理由。`; hostImage.src = 'public/assets/kanshan-wave.gif'; }
-    paragraph.textContent = buffer.slice(0, shown);
+    if (!instant && performance.now() < nextCharacterAt) return;
+    shown = Math.min(buffer.length, instant ? buffer.length : shown + 1);
+    const character = buffer[shown - 1] || '';
+    nextCharacterAt = performance.now() + (/[。！？!?]/.test(character) ? 260 : /[，、；：,;:]/.test(character) ? 140 : 55);
+    if (shown && !speaking) { speaking = true; setSeatSpeaking(id); hostMessage.textContent = `${roleNames[id]}正在发言，先听听这一席的理由。`; hostImage.src = 'public/assets/kanshan-wave.gif'; }
+    paragraph.textContent = buffer.slice(0, shown).join('');
     if (follow) conversation.scrollTop = conversation.scrollHeight;
     if (finished && shown === buffer.length) {
       clearInterval(timer);
       article.classList.remove('is-streaming');
       article.setAttribute('aria-busy', 'false');
+      setSeatSpeaking(null);
       resolve();
     }
   };
-  const timer = setInterval(tick, 28);
+  const timer = setInterval(tick, 16);
   return {
-    push(text) { buffer += text; },
+    push(text) { buffer.push(...Array.from(text)); },
     async finish() { finished = true; tick(); await done; },
   };
 }
@@ -204,7 +217,11 @@ function updateRoundGuide() {
   hostImage.src = busy || loadingPlan ? 'public/assets/kanshan-thinking.gif' : 'public/assets/kanshan-wave.gif';
 }
 
-function selectSeat(id) { if (busy || loadingPlan) return; setSeatSpeaking(id, 'speaking'); }
+function selectSeat(id) {
+  if (busy || loadingPlan) return;
+  setSeatSpeaking(null);
+  hostMessage.textContent = `${roleNames[id]}：${lines[id]}`;
+}
 function addMessage(name, text, type = 'user') {
   const article = document.createElement('article');
   article.className = `message message-${type}`;

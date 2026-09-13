@@ -1,3 +1,4 @@
+import { createSSEParser } from './stream-utils.mjs';
 const seats = document.querySelectorAll('.seat');
 const hostMessage = document.querySelector('#host-message');
 const hostImage = document.querySelector('#host-image');
@@ -48,6 +49,108 @@ let loadingPlan = false;
 let initialPosition = '';
 let finalPosition = '';
 let completed = false;
+let skipSpeech = false;
+const demoOpenings = Object.fromEntries([...document.querySelectorAll('.message[data-seat]')].map(article => [article.dataset.seat, article.querySelector('p').textContent]));
+const speechControl = document.createElement('button');
+speechControl.type = 'button';
+speechControl.className = 'speech-control is-hidden';
+speechControl.textContent = '直接显示本轮全文';
+roundGuide.append(speechControl);
+speechControl.addEventListener('click', () => { skipSpeech = true; speechControl.classList.add('is-hidden'); });
+
+const waitingCard = document.createElement('section');
+waitingCard.className = 'kanshan-waiting is-hidden';
+waitingCard.setAttribute('aria-label', '和刘看山一起等开场');
+waitingCard.innerHTML = '<img src="public/assets/kanshan-thinking.gif" alt="刘看山正在思考"><div><span class="waiting-caption">看山的开场时间</span><h3>好问题，值得多听几种声音。</h3><p class="waiting-thought" aria-live="polite"></p><div class="waiting-actions"><button type="button">换个思考角度 ↻</button><small class="waiting-elapsed"></small></div></div>';
+roundGuide.after(waitingCard);
+let waitingTimer;
+const thoughts = [
+  '先在心里选一边：什么证据，会让你改变现在的想法？',
+  '如果对方也有道理，最可能是哪一点？',
+  '把“对不对”换成“适合谁”，答案会不会变？',
+  '经验不同的人，可能在回答同一个问题的不同部分。',
+  '等会儿挑一个最想追问的观点，我帮你把话递过去。',
+];
+let thoughtIndex = 0;
+function nextThought() {
+  const thought = thoughts[thoughtIndex++ % thoughts.length];
+  waitingCard.querySelector('.waiting-thought').textContent = thought;
+  hostMessage.textContent = thought;
+  hostImage.src = thoughtIndex % 2 ? 'public/assets/kanshan-thinking.gif' : 'public/assets/kanshan-wave.gif';
+  waitingCard.querySelector('img').src = hostImage.src;
+}
+waitingCard.querySelector('button').addEventListener('click', nextThought);
+function startWaiting() {
+  clearInterval(waitingTimer);
+  const started = Date.now();
+  waitingCard.classList.remove('is-hidden');
+  document.querySelector('.roundtable-scene').classList.add('is-searching');
+  setSeatSpeaking(null);
+  nextThought();
+  waitingCard.querySelector('.waiting-elapsed').textContent = '正在检索与整理';
+  let ticks = 0;
+  waitingTimer = setInterval(() => {
+    const seconds = Math.floor((Date.now() - started) / 1000);
+    waitingCard.querySelector('.waiting-elapsed').textContent = `已等待 ${seconds} 秒`;
+    if (++ticks % 7 === 0) nextThought();
+    if (seconds >= 30) waitingCard.querySelector('h3').textContent = '还在整理，感谢你等我一下。';
+  }, 1000);
+}
+function stopWaiting() {
+  clearInterval(waitingTimer);
+  waitingCard.classList.add('is-hidden');
+  waitingCard.querySelector('h3').textContent = '好问题，值得多听几种声音。';
+  document.querySelector('.roundtable-scene').classList.remove('is-searching');
+}
+
+// Pace cached/validated speeches, and smooth real network deltas with the same renderer.
+function createWriter(article, id) {
+  const paragraph = article.querySelector('p');
+  let buffer = '';
+  let shown = 0;
+  let finished = false;
+  let resolve;
+  let speaking = false;
+  const done = new Promise(r => { resolve = r; });
+  paragraph.textContent = '';
+  article.classList.add('is-streaming');
+  article.setAttribute('aria-busy', 'true');
+  const tick = () => {
+    const follow = conversation.scrollHeight - conversation.scrollTop - conversation.clientHeight < 90;
+    const instant = skipSpeech || matchMedia('(prefers-reduced-motion: reduce)').matches || document.hidden;
+    shown = Math.min(buffer.length, instant ? buffer.length : shown + 2);
+    if (buffer && !speaking) { speaking = true; setSeatSpeaking(id); hostMessage.textContent = `${roleNames[id]}正在发言，先听听这一席的理由。`; hostImage.src = 'public/assets/kanshan-wave.gif'; }
+    paragraph.textContent = buffer.slice(0, shown);
+    if (follow) conversation.scrollTop = conversation.scrollHeight;
+    if (finished && shown === buffer.length) {
+      clearInterval(timer);
+      article.classList.remove('is-streaming');
+      article.setAttribute('aria-busy', 'false');
+      resolve();
+    }
+  };
+  const timer = setInterval(tick, 28);
+  return {
+    push(text) { buffer += text; },
+    async finish() { finished = true; tick(); await done; },
+  };
+}
+async function speak(article, text, id) {
+  const writer = createWriter(article, id);
+  writer.push(text);
+  await writer.finish();
+}
+async function playOpenings() {
+  skipSpeech = false;
+  speechControl.classList.remove('is-hidden');
+  for (const id of ['a', 'b', 'c']) {
+    const article = document.querySelector(`.message[data-seat="${id}"]`);
+    article.classList.remove('is-hidden');
+    await speak(article, debatePlan?.positions.find(p => p.id === id)?.opening || demoOpenings[id] || lines[id], id);
+  }
+  speechControl.classList.add('is-hidden');
+  setSeatSpeaking(null);
+}
 
 function toast(message, tone = 'host') {
   if (!toastStack) return;
@@ -91,6 +194,7 @@ function updateRoundGuide() {
   mentionPicker.classList.toggle('is-hidden', round !== 2);
   userInput.disabled = busy || loadingPlan || completed;
   sendButton.disabled = busy || loadingPlan || completed;
+  mentionChips.forEach(chip => { chip.disabled = busy || loadingPlan || completed; });
   refreshButton.disabled = busy || loadingPlan || completed || round !== 1;
   nextRound.disabled = busy || loadingPlan || completed || (round === 2 && !observer && !userHasQuestioned) || (round === 3 && !observer && !userHasSummarized);
   nextRound.textContent = completed ? '本场讨论已完成' : round === 1 ? '进入质询 →' : round === 2 ? '进入总结 →' : '生成圆桌纪要';
@@ -100,7 +204,7 @@ function updateRoundGuide() {
   hostImage.src = busy || loadingPlan ? 'public/assets/kanshan-thinking.gif' : 'public/assets/kanshan-wave.gif';
 }
 
-function selectSeat(id) { if (busy) return; setSeatSpeaking(id, 'speaking'); }
+function selectSeat(id) { if (busy || loadingPlan) return; setSeatSpeaking(id, 'speaking'); }
 function addMessage(name, text, type = 'user') {
   const article = document.createElement('article');
   article.className = `message message-${type}`;
@@ -110,6 +214,7 @@ function addMessage(name, text, type = 'user') {
   article.querySelector('p').textContent = text;
   conversation.append(article);
   conversation.scrollTop = conversation.scrollHeight;
+  return article;
 }
 function updateRoundUI() {
   roundLabel.textContent = ['第 1 / 3 回合 · 立场陈述', '第 2 / 3 回合 · 交叉质询', '第 3 / 3 回合 · 立场总结'][round - 1];
@@ -136,11 +241,20 @@ function startSecondRound() {
   updateRoundGuide();
   userInput.focus();
 }
-function startThirdRound() {
+async function startThirdRound() {
+  busy = true;
+  skipSpeech = false;
   round = 3;
   updateRoundUI();
   addMessage('刘看山', '第三回合开始。请每一席总结：仍坚持什么、承认什么边界、接下来如何行动。', 'host');
-  ['a', 'b', 'c'].forEach((id) => addMessage(roleNames[id], debatePlan?.positions.find((item) => item.id === id)?.closing || evidence[id].boundary, 'guest'));
+  updateRoundGuide();
+  speechControl.classList.remove('is-hidden');
+  for (const id of ['a', 'b', 'c']) {
+    await speak(addMessage(roleNames[id], '', 'guest'), debatePlan?.positions.find(p => p.id === id)?.closing || evidence[id].boundary, id);
+  }
+  speechControl.classList.add('is-hidden');
+  setSeatSpeaking(null);
+  busy = false;
   roundNote.textContent = '写下你讨论后的最终立场，刘看山会将它与初始观点并列收录。';
   userInput.placeholder = '讨论后，我的最终立场是……';
   composerHint.textContent = '第三回合 · 更新最终立场';
@@ -163,20 +277,49 @@ async function replyToQuestion(target, userMessage) {
     c: '把复盘设为项目的固定步骤：功能完成、验证结果、补齐原理，三者缺一不可。',
   };
   const names = roleNames;
-  const targetSeat = document.querySelector(`.seat[data-seat="${target}"]`);
+  skipSpeech = false;
   setSeatSpeaking(target, 'thinking');
   hostMessage.textContent = `${names[target]}正在基于知乎证据组织回应……`;
   let response = debatePlan?.positions.find((item) => item.id === target)?.counter || replies[target];
+  const article = addMessage(names[target], '', 'guest');
+  const writer = createWriter(article, target);
+  let received = false;
   try {
     const question = document.querySelector('#topic-question').textContent.trim();
-    const result = await fetch(`/api/reply?question=${encodeURIComponent(question)}&position=${target}&message=${encodeURIComponent(userMessage)}`);
-    const payload = await result.json();
-    if (result.ok && payload.ok && payload.reply) response = payload.reply;
-    else response = '（预设回应）' + response;
-  } catch { response = '（预设回应）' + response; }
+    const result = await fetch(`/api/reply?stream=1&question=${encodeURIComponent(question)}&position=${target}&message=${encodeURIComponent(userMessage)}`, { signal: AbortSignal.timeout(85000) });
+    if (!result.ok) throw new Error('REPLY_FAILED');
+    if (result.headers.get('content-type')?.includes('text/event-stream')) {
+      let complete = false;
+      const parser = createSSEParser(({ event, data }) => {
+        const packet = JSON.parse(data);
+        if (event === 'error') throw new Error('STREAM_INTERRUPTED');
+        if (event === 'delta' && packet.text) { received = true; writer.push(packet.text); }
+        if (event === 'done') complete = true;
+      });
+      const reader = result.body.getReader();
+      const decoder = new TextDecoder();
+      try {
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          parser.push(decoder.decode(value, { stream: true }));
+        }
+        parser.push(decoder.decode());
+        if (!complete || !received) throw new Error('STREAM_INCOMPLETE');
+      } finally { await reader.cancel().catch(() => {}); }
+    } else {
+      const payload = await result.json();
+      if (!payload.ok || !payload.reply) throw new Error('REPLY_FAILED');
+      received = true; writer.push(payload.reply);
+    }
+  } catch {
+    writer.push(received ? '\n（连接中断，以上为已收到的内容，可重新追问。）' : '（预设回应）' + response);
+  }
+  await writer.finish();
   busy = false;
   userHasQuestioned = true;
-  selectSeat(target); addMessage(names[target], response, 'guest');
+  setSeatSpeaking(null);
+  hostMessage.textContent = '这席的回应已送达。你可以继续追问，或看看大家的总结。';
   updateRoundGuide();
 }
 
@@ -244,7 +387,7 @@ function applyPlan(payload) {
   payload.plan.positions.forEach((position) => {
     const message = document.querySelector(`.message[data-seat="${position.id}"]`);
     message.querySelector('.message-name').textContent = position.name;
-    message.querySelector('p').textContent = position.opening;
+    message.querySelector('p').textContent = '';
     const citation = message.querySelector('.citation');
     citation.textContent = `知乎真实回答 ${evidence[position.id].sources.length} 篇`;
     const seat = document.querySelector(`.seat[data-seat="${position.id}"]`);
@@ -265,9 +408,11 @@ function applyPlan(payload) {
 
 async function refreshZhihuSources(silent = false) {
   if (loadingPlan || busy || round !== 1) return;
-  loadingPlan = true; updateRoundGuide();
   const question = document.querySelector('#topic-question').textContent.trim();
   if (!question) return;
+  loadingPlan = true; updateRoundGuide();
+  document.querySelectorAll('.message[data-seat]').forEach(article => { article.classList.add('is-hidden'); article.querySelector('p').textContent = ''; });
+  startWaiting();
   if (refreshButton) {
     refreshButton.disabled = true;
     refreshButton.textContent = '正在检索…';
@@ -276,21 +421,28 @@ async function refreshZhihuSources(silent = false) {
     hostMessage.textContent = `正在从知乎检索与"${truncate(question, 18)}"相关的真实讨论……`;
   }
   try {
-    const response = await fetch(`/api/roundtable?question=${encodeURIComponent(question)}`);
+    const response = await fetch(`/api/roundtable?question=${encodeURIComponent(question)}`, { signal: AbortSignal.timeout(100000) });
     const payload = await response.json();
     if (!response.ok || !payload.ok || payload.sources.length === 0) throw new Error('NO_SOURCES');
     applyPlan(payload);
+    stopWaiting();
+    guideText.textContent = '来源已就绪，三位嘉宾依次开场。';
+    await playOpenings();
     hostMessage.textContent = `刘看山已从知乎召集 ${payload.sources.length} 条公开讨论，并整理出三种可讨论的立场。`;
     addMessage('刘看山', `已基于 ${payload.sources.length} 条知乎公开回答更新本场立场与论据。`, 'host');
     toast(`已自动载入 ${payload.sources.length} 条知乎真实依据`, 'host');
   } catch (error) {
-    hostMessage.textContent = '暂时无法加载知乎来源，已使用本地演示资料继续。';
-    addMessage('刘看山', '知乎搜索暂时不可用；当前继续使用本地演示资料。', 'host');
-    toast('知乎搜索暂不可用，已回退到本地资料', 'host');
+    stopWaiting();
+    const fallbackNotice = debatePlan ? '刷新暂时不可用，继续使用本场已加载的资料。' : '知乎搜索暂时不可用；当前继续使用本地演示资料。';
+    hostMessage.textContent = fallbackNotice;
+    addMessage('刘看山', fallbackNotice, 'host');
+    toast(fallbackNotice, 'host');
+    guideText.textContent = '正在用现有资料开场。';
+    await playOpenings();
   } finally {
+    stopWaiting();
     loadingPlan = false;
     updateRoundGuide();
-    if (round === 1) conversation.scrollTop = 0;
     if (refreshButton) {
       refreshButton.disabled = false;
       refreshButton.textContent = '刷新知乎来源';
@@ -390,8 +542,8 @@ function enterDebate(mode, initialView = '') {
   updateRoundUI();
   updateRoundGuide();
   // 自动刷新知乎来源（无需点击按钮）
-  refreshZhihuSources();
   setTimeout(() => userInput.focus(), 200);
+  return refreshZhihuSources();
 }
 document.querySelector('#question-form').addEventListener('submit', (event) => {
   event.preventDefault();
@@ -428,12 +580,12 @@ if (params.get('demo') === '1') {
   onboarding.classList.add('is-hidden');
   document.querySelector('.topbar').classList.remove('is-hidden');
   document.querySelector('.debate-layout').classList.remove('is-hidden');
-  enterDebate(params.get('mode') === 'observer' ? 'observer' : 'participant', '先用 AI 完成项目，再针对项目里卡壳的地方补基础。');
+  const opening = enterDebate(params.get('mode') === 'observer' ? 'observer' : 'participant', '先用 AI 完成项目，再针对项目里卡壳的地方补基础。');
   const target = Number(params.get('round')) || 1;
-  if (target >= 2) {
+  opening.then(() => { if (target >= 2) {
     startSecondRound();
     if (target >= 3) startThirdRound();
-  }
+  } });
 }
 
 // 进入页面即初始化引导卡（圆桌未开启前不展示）

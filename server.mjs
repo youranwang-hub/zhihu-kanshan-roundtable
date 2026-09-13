@@ -5,7 +5,7 @@ import { readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { zhihuRequest } from './zhihu-client.mjs';
+import { zhihuRequest, streamZhihuReply } from './zhihu-client.mjs';
 
 const run = promisify(execFile);
 const root = path.dirname(fileURLToPath(import.meta.url));
@@ -16,7 +16,8 @@ const directApi = process.env.ZHIHU_PROVIDER === 'http' || Boolean(process.env.Z
 const pendingPlans = new Map();
 const cacheTtl = 30 * 60 * 1000;
 let activeRequests = 0;
-const publicFiles = new Set(['index.html', 'styles.css', 'refinement.css', 'app.js']);
+const publicFiles = new Set(['index.html', 'styles.css', 'refinement.css', 'app.js', 'stream-utils.mjs']);
+types.set('.mjs', 'text/javascript; charset=utf-8');
 
 function send(response, status, body, type = 'application/json; charset=utf-8') {
   response.writeHead(status, { 'Content-Type': type, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
@@ -63,12 +64,15 @@ async function buildPlan(question, sources) {
   if (new Set(positions.map((item) => item.id)).size !== 3 || positions.some((item) => !['a', 'b', 'c'].includes(item.id) || !item.name || !item.opening || !item.sourceIds.length)) throw new Error('PLAN_VALIDATION_FAILED');
   return { positions };
 }
-async function reply(question, plan, sources, positionId, userMessage) {
+function replyPrompt(question, plan, sources, positionId, userMessage) {
   const position = plan.positions.find((item) => item.id === positionId);
   if (!position) throw new Error('POSITION_NOT_FOUND');
   const evidence = sources.filter((item) => position.sourceIds.includes(item.id)).map(({ title, excerpt }) => ({ title, excerpt }));
   const prompt = `你在看山圆桌中代表“${position.name}”。问题：${question}。用户质询：${userMessage}。你的既有立场：${position.stance}。可用知乎摘要：${JSON.stringify(evidence)}。请只用不超过120字回答：先直接回应用户，再说明理由，最后承认一个适用边界。不能虚构来源或事实。`;
-  return plain(await ask(prompt)).slice(0, 160);
+  return prompt;
+}
+async function reply(question, plan, sources, positionId, userMessage) {
+  return plain(await ask(replyPrompt(question, plan, sources, positionId, userMessage))).slice(0, 160);
 }
 
 const server = http.createServer(async (request, response) => {
@@ -117,6 +121,26 @@ const server = http.createServer(async (request, response) => {
     const userMessage = (url.searchParams.get('message') || '').trim();
     const cached = plans.get(question);
     if (!cached || !['a', 'b', 'c'].includes(positionId) || !userMessage || userMessage.length > 1000 || question.length > 120) return send(response, 400, JSON.stringify({ ok: false, error: 'REPLY_INPUT_INVALID' }));
+    if (url.searchParams.get('stream') === '1' && directApi) {
+      response.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-cache, no-transform', 'X-Accel-Buffering': 'no' });
+      response.flushHeaders();
+      const abort = new AbortController();
+      response.once('close', () => abort.abort());
+      const emit = (event, data) => { if (!response.destroyed) response.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`); };
+      const heartbeat = setInterval(() => { if (!response.destroyed) response.write(': keep-alive\n\n'); }, 10000);
+      let output = '';
+      try {
+        emit('status', { message: 'thinking' });
+        await streamZhihuReply(replyPrompt(question, cached.plan, cached.sources, positionId, userMessage), delta => {
+          const part = delta.slice(0, Math.max(0, 500 - output.length));
+          output += part;
+          if (part) emit('delta', { text: part });
+        }, abort.signal);
+        emit('done', { reply: output });
+      } catch { emit('error', { message: '回应暂时中断，请稍后重试。' }); }
+      finally { clearInterval(heartbeat); response.end(); }
+      return;
+    }
     try { return send(response, 200, JSON.stringify({ ok: true, reply: await reply(question, cached.plan, cached.sources, positionId, userMessage) })); }
     catch { console.error('REPLY_UNAVAILABLE'); return send(response, 502, JSON.stringify({ ok: false, error: 'REPLY_UNAVAILABLE' })); }
   }

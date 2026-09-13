@@ -28,7 +28,7 @@ jobs:
       - name: Prepare public files only
         run: |
           mkdir -p _site/public
-          cp index.html app.js styles.css refinement.css _site/
+          cp index.html app.js stream-utils.mjs styles.css refinement.css _site/
           cp -R public/assets _site/public/
       - name: Upload static site
         uses: actions/upload-pages-artifact@v3

@@ -4,6 +4,8 @@
 
 ## 在线演示
 
+实时版：<https://roundtable.xiaoshixuji.xyz/>。前后端部署在 Ubuntu 服务器，支持真实知乎检索、三方立场生成和嘉宾追问；访客无需本机 CLI。
+
 GitHub Pages 部署完成后，访问：<https://youranwang-hub.github.io/zhihu-kanshan-roundtable/>
 
 公网演示版保留完整的圆桌交互、角色状态、三回合流程和本地示例内容。由于 GitHub Pages 只能托管静态文件，不能运行 `server.mjs` 或保管知乎 CLI 凭证，点击“刷新知乎来源”时会自动继续使用演示资料。
@@ -40,12 +42,18 @@ node server.mjs
 | `styles.css` / `refinement.css` | 自适应视觉、人物与桌面构图、界面主题 |
 | `app.js` | 回合状态、旁听/参与分流、质询与前端降级逻辑 |
 | `server.mjs` | 静态文件服务、知乎检索、立场生成与质询回应 |
+| `zhihu-client.mjs` | 直连知乎官方搜索与直答 HTTP API，凭证仅在服务端读取 |
+| `deploy/` | Ubuntu、systemd、Nginx、HTTPS 部署与运维说明 |
 | `public/assets/` | 刘看山、人物三态和圆桌美术资源 |
 
 ## 部署说明
 
 仓库包含 GitHub Actions 的 Pages 部署工作流。首次部署需在仓库 **Settings → Pages → Build and deployment** 将来源选择为 **GitHub Actions**。之后推送到 `main` 会自动发布静态演示版。
 
-要让公网版也使用实时知乎来源，需要把 `server.mjs` 迁移到支持 Node.js 的后端环境，并把前端 `/api/*` 请求指向该后端；不要将知乎 CLI 凭证、Access Secret 或任何密钥放进 GitHub Pages 或前端代码。
+Ubuntu 实时版本已采用前后端同域部署，详见 [部署与运维说明](deploy/README.md)。设置 `ZHIHU_PROVIDER=http` 和服务端 `ZHIHU_ACCESS_SECRET` 即可使用官方 HTTP API；默认的本地启动方式仍保留 CLI 支持。此数据检索接口使用 Access Secret 的 Bearer 鉴权与 `X-Request-Timestamp` 秒级时间戳，不使用内容发布接口的 App Key / App Secret。
+
+服务默认仅监听 `127.0.0.1:4173`，由 Nginx 提供公网 HTTPS。后端仅允许读取前端资源，包含有界问题缓存和并发限制，Nginx 另提供访问限流。不要将凭证放进 GitHub Pages 或前端代码。
+
+验证后端：`node --test test/server.test.mjs`。
 
 更多产品定位、场景和后续路线见 [产品说明计划书](PRODUCT_PLAN.md)。

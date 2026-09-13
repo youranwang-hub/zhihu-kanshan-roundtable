@@ -22,3 +22,9 @@ public/assets/*
 !public/assets/character-pink-sweater-seated-default.png
 !public/assets/character-pink-sweater-seated-speaking.png
 !public/assets/character-pink-sweater-seated-thinking.png
+
+.env
+.env.*
+!.env.example
+.deploy-local/
+_site/

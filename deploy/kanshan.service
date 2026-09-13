@@ -1,0 +1,27 @@
+[Unit]
+Description=Kanshan roundtable
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=kanshan
+Group=kanshan
+WorkingDirectory=/opt/kanshan/current
+Environment=NODE_ENV=production
+Environment=PORT=4173
+Environment=ZHIHU_PROVIDER=http
+EnvironmentFile=/etc/kanshan/environment
+ExecStart=/opt/kanshan/node/bin/node /opt/kanshan/current/server.mjs
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+MemoryMax=384M
+TasksMax=64
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

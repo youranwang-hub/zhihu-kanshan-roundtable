@@ -25,6 +25,71 @@ const debateLayout = document.querySelector('.debate-layout');
 const mentionPicker = document.querySelector('#mention-picker');
 const mentionChips = document.querySelectorAll('.mention-chip');
 const refreshButton = document.querySelector('#refresh-sources');
+const soundToggle = document.querySelector('#sound-toggle');
+let soundEnabled = false;
+try { soundEnabled = localStorage.getItem('kanshan-sound') === 'on'; } catch {}
+let audioContext;
+let soundGain;
+const soundNotes = {
+  opening: [[523, 0, .16], [659, .14, .2], [784, .3, .3]],
+  turn: [[440, 0, .12], [587, .12, .22]],
+  speak: [[392, 0, .12]],
+  thought: [[659, 0, .1], [784, .09, .14]],
+  sent: [[523, 0, .1], [659, .09, .14]],
+  complete: [[523, 0, .2], [659, .16, .2], [784, .32, .4]],
+};
+function updateSoundToggle() {
+  soundToggle.textContent = soundEnabled ? '音效：开' : '开启音效';
+  soundToggle.setAttribute('aria-pressed', String(soundEnabled));
+  if (soundGain) soundGain.gain.value = soundEnabled ? .075 : 0;
+}
+function unlockSound() {
+  if (!soundEnabled) return;
+  try {
+    const AudioEngine = window.AudioContext || window.webkitAudioContext;
+    if (!AudioEngine) { soundEnabled = false; updateSoundToggle(); return; }
+    if (!audioContext) {
+      audioContext = new AudioEngine();
+      soundGain = audioContext.createGain();
+      soundGain.gain.value = .075;
+      soundGain.connect(audioContext.destination);
+    }
+    if (audioContext.state === 'suspended') audioContext.resume().catch(() => {});
+  } catch { soundEnabled = false; updateSoundToggle(); }
+}
+function playSound(name) {
+  if (!soundEnabled || document.hidden || audioContext?.state !== 'running') return;
+  // Short, softly enveloped notes; never attach a sound to every printed character.
+  for (const [frequency, delay, duration] of soundNotes[name] || []) {
+    const oscillator = audioContext.createOscillator();
+    const envelope = audioContext.createGain();
+    const start = audioContext.currentTime + delay;
+    oscillator.type = 'sine';
+    oscillator.frequency.value = frequency;
+    envelope.gain.setValueAtTime(0, start);
+    envelope.gain.linearRampToValueAtTime(.5, start + .012);
+    envelope.gain.exponentialRampToValueAtTime(.001, start + duration);
+    oscillator.connect(envelope);
+    envelope.connect(soundGain);
+    oscillator.onended = () => { oscillator.disconnect(); envelope.disconnect(); };
+    oscillator.start(start);
+    oscillator.stop(start + duration + .02);
+  }
+}
+soundToggle.addEventListener('click', () => {
+  soundEnabled = !soundEnabled;
+  try { localStorage.setItem('kanshan-sound', soundEnabled ? 'on' : 'off'); } catch {}
+  updateSoundToggle();
+  unlockSound();
+  if (soundEnabled && audioContext) audioContext.resume().then(() => playSound('thought')).catch(() => {});
+});
+document.addEventListener('pointerdown', unlockSound);
+document.addEventListener('keydown', unlockSound);
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden && audioContext?.state === 'running') audioContext.suspend().catch(() => {});
+  else if (!document.hidden) unlockSound();
+});
+updateSoundToggle();
 // Load all supplied poses before their turn, avoiding a blank image on first speech.
 document.querySelectorAll('.character').forEach(character => {
   for (const pose of ['default', 'thinking', 'speaking']) {
@@ -86,7 +151,7 @@ function nextThought() {
   hostImage.src = thoughtIndex % 2 ? 'public/assets/kanshan-thinking.gif' : 'public/assets/kanshan-wave.gif';
   waitingCard.querySelector('img').src = hostImage.src;
 }
-waitingCard.querySelector('button').addEventListener('click', nextThought);
+waitingCard.querySelector('button').addEventListener('click', () => { nextThought(); playSound('thought'); });
 function startWaiting() {
   clearInterval(waitingTimer);
   const started = Date.now();
@@ -131,7 +196,7 @@ function createWriter(article, id) {
     shown = Math.min(buffer.length, instant ? buffer.length : shown + 1);
     const character = buffer[shown - 1] || '';
     nextCharacterAt = performance.now() + (/[。！？!?]/.test(character) ? 260 : /[，、；：,;:]/.test(character) ? 140 : 55);
-    if (shown && !speaking) { speaking = true; setSeatSpeaking(id); hostMessage.textContent = `${roleNames[id]}正在发言，先听听这一席的理由。`; hostImage.src = 'public/assets/kanshan-wave.gif'; }
+    if (shown && !speaking) { speaking = true; setSeatSpeaking(id); if (!instant) playSound('speak'); hostMessage.textContent = `${roleNames[id]}正在发言，先听听这一席的理由。`; hostImage.src = 'public/assets/kanshan-wave.gif'; }
     paragraph.textContent = buffer.slice(0, shown).join('');
     if (follow) conversation.scrollTop = conversation.scrollHeight;
     if (finished && shown === buffer.length) {
@@ -242,6 +307,7 @@ function updateRoundUI() {
   });
 }
 function startSecondRound() {
+  playSound('turn');
   round = 2;
   updateRoundUI();
   addMessage('刘看山', `第二回合开始。点击下方任一 @角色 按钮，即可向其提出追问。`, 'host');
@@ -259,6 +325,7 @@ function startSecondRound() {
   userInput.focus();
 }
 async function startThirdRound() {
+  playSound('turn');
   busy = true;
   skipSpeech = false;
   round = 3;
@@ -492,6 +559,7 @@ composer.addEventListener('submit', (event) => {
     const mention = findMention(text);
     if (!mention) { roundNote.textContent = `请先点击下方 @${roleNames.a} / @${roleNames.b} / @${roleNames.c} 任一按钮，再补充你的具体追问。`; return; }
     addMessage('你 · 交叉质询', text);
+    playSound('sent');
     userHasQuestioned = true;
     nextRound.disabled = false;
     roundNote.textContent = `问题已送达 ${mention[1]}。对方正在回应；你可以继续追问，或进入第三回合总结。`;
@@ -518,6 +586,7 @@ nextRound.addEventListener('click', () => {
     addMessage('刘看山 · 圆桌纪要', Object.entries(roleNames).map(([id, name]) => `${name}：${debatePlan?.positions.find(p => p.id === id)?.closing || evidence[id].claim}`).join('\n\n'), 'host');
     if (currentMode === 'participant') addMessage('我的观点变化', `最初：${initialPosition}\n\n现在：${finalPosition}`, 'user');
     completed = true;
+    playSound('complete');
     hostMessage.textContent = '谢谢你把不同的声音听完。带着自己的判断，继续探索吧。';
     setSeatSpeaking(null);
     updateRoundGuide();
@@ -534,6 +603,8 @@ function setQuestion(question) {
   document.querySelector('#topic-question').textContent = question;
 }
 function enterDebate(mode, initialView = '') {
+  unlockSound();
+  if (soundEnabled && audioContext) audioContext.resume().then(() => playSound('opening')).catch(() => {});
   currentMode = mode;
   initialPosition = initialView;
   onboarding.classList.add('is-hidden');

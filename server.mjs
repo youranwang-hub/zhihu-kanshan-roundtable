@@ -19,8 +19,8 @@ let activeRequests = 0;
 const publicFiles = new Set(['index.html', 'styles.css', 'refinement.css', 'app.js', 'stream-utils.mjs']);
 types.set('.mjs', 'text/javascript; charset=utf-8');
 
-function send(response, status, body, type = 'application/json; charset=utf-8') {
-  response.writeHead(status, { 'Content-Type': type, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
+function send(response, status, body, type = 'application/json; charset=utf-8', cache = 'no-store') {
+  response.writeHead(status, { 'Content-Type': type, 'Cache-Control': cache, 'X-Content-Type-Options': 'nosniff' });
   response.end(body);
 }
 function plain(value = '') { return String(value ?? '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim(); }
@@ -149,7 +149,8 @@ const server = http.createServer(async (request, response) => {
   if (!publicFiles.has(relative) && !/^public[\\/]assets[\\/][\w-]+\.(png|gif)$/.test(relative)) return send(response, 404, JSON.stringify({ ok: false, error: 'NOT_FOUND' }));
   const target = path.join(root, relative);
   if (!target.startsWith(root) || !existsSync(target)) return send(response, 404, JSON.stringify({ ok: false, error: 'NOT_FOUND' }));
-  return send(response, 200, await readFile(target), types.get(path.extname(target)) || 'application/octet-stream');
+  const imageAsset = ['.png', '.gif'].includes(path.extname(target));
+  return send(response, 200, await readFile(target), types.get(path.extname(target)) || 'application/octet-stream', imageAsset ? 'public, max-age=3600' : 'no-store');
  } catch {
    if (!response.headersSent) send(response, 500, JSON.stringify({ ok: false, error: 'INTERNAL_ERROR' }));
    else response.end();

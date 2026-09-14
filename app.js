@@ -30,6 +30,8 @@ let soundEnabled = false;
 try { soundEnabled = localStorage.getItem('kanshan-sound') === 'on'; } catch {}
 let audioContext;
 let soundGain;
+const soundBuffers = new Map();
+const activeSounds = new Set();
 const soundNotes = {
   opening: [[523, 0, .16], [659, .14, .2], [784, .3, .3]],
   turn: [[440, 0, .12], [587, .12, .22]],
@@ -49,54 +51,68 @@ function unlockSound() {
     const AudioEngine = window.AudioContext || window.webkitAudioContext;
     if (!AudioEngine) { soundEnabled = false; updateSoundToggle(); return; }
     if (!audioContext) {
-      audioContext = new AudioEngine();
+      audioContext = new AudioEngine({ latencyHint: 'interactive' });
       soundGain = audioContext.createGain();
       soundGain.gain.value = .075;
       soundGain.connect(audioContext.destination);
+      for (const [name, notes] of Object.entries(soundNotes)) {
+        const duration = Math.max(...notes.map(([, delay, length]) => delay + length));
+        const buffer = audioContext.createBuffer(1, Math.ceil(duration * audioContext.sampleRate), audioContext.sampleRate);
+        const samples = buffer.getChannelData(0);
+        for (const [frequency, delay, length] of notes) {
+          const offset = Math.round(delay * audioContext.sampleRate);
+          for (let i = 0; i < length * audioContext.sampleRate && offset + i < samples.length; i++) {
+            const time = i / audioContext.sampleRate;
+            const envelope = Math.min(1, time / .012) * Math.exp(-7 * time / length) * .5;
+            samples[offset + i] += Math.sin(2 * Math.PI * frequency * time) * envelope;
+          }
+        }
+        soundBuffers.set(name, buffer);
+      }
     }
     if (audioContext.state === 'suspended') audioContext.resume().catch(() => {});
   } catch { soundEnabled = false; updateSoundToggle(); }
 }
 function playSound(name) {
   if (!soundEnabled || document.hidden || audioContext?.state !== 'running') return;
-  // Short, softly enveloped notes; never attach a sound to every printed character.
-  for (const [frequency, delay, duration] of soundNotes[name] || []) {
-    const oscillator = audioContext.createOscillator();
-    const envelope = audioContext.createGain();
-    const start = audioContext.currentTime + delay;
-    oscillator.type = 'sine';
-    oscillator.frequency.value = frequency;
-    envelope.gain.setValueAtTime(0, start);
-    envelope.gain.linearRampToValueAtTime(.5, start + .012);
-    envelope.gain.exponentialRampToValueAtTime(.001, start + duration);
-    oscillator.connect(envelope);
-    envelope.connect(soundGain);
-    oscillator.onended = () => { oscillator.disconnect(); envelope.disconnect(); };
-    oscillator.start(start);
-    oscillator.stop(start + duration + .02);
-  }
+  if (!soundBuffers.has(name) || activeSounds.size >= 2) return;
+  const source = audioContext.createBufferSource();
+  source.buffer = soundBuffers.get(name);
+  source.connect(soundGain);
+  activeSounds.add(source);
+  source.onended = () => { source.disconnect(); activeSounds.delete(source); };
+  source.start();
 }
 soundToggle.addEventListener('click', () => {
   soundEnabled = !soundEnabled;
   try { localStorage.setItem('kanshan-sound', soundEnabled ? 'on' : 'off'); } catch {}
   updateSoundToggle();
+  if (!soundEnabled && audioContext) {
+    activeSounds.forEach(source => source.stop());
+    audioContext.suspend().catch(() => {});
+  }
   unlockSound();
   if (soundEnabled && audioContext) audioContext.resume().then(() => playSound('thought')).catch(() => {});
 });
 document.addEventListener('pointerdown', unlockSound);
 document.addEventListener('keydown', unlockSound);
 document.addEventListener('visibilitychange', () => {
+  if (document.hidden) activeSounds.forEach(source => source.stop());
   if (document.hidden && audioContext?.state === 'running') audioContext.suspend().catch(() => {});
   else if (!document.hidden) unlockSound();
 });
 updateSoundToggle();
-// Load all supplied poses before their turn, avoiding a blank image on first speech.
-document.querySelectorAll('.character').forEach(character => {
-  for (const pose of ['default', 'thinking', 'speaking']) {
-    const image = new Image();
-    image.src = character.dataset[pose];
+// Warm alternate poses sequentially after page load, without competing with initial assets.
+window.addEventListener('load', async () => {
+  for (const character of document.querySelectorAll('.seat .character')) {
+    for (const pose of ['thinking', 'speaking']) {
+      const image = new Image();
+      image.fetchPriority = 'low';
+      image.src = character.dataset[pose];
+      await image.decode().catch(() => {});
+    }
   }
-});
+}, { once: true });
 let round = 1;
 let userHasSpoken = false;
 let userHasQuestioned = false;
@@ -184,15 +200,17 @@ function createWriter(article, id) {
   let resolve;
   let speaking = false;
   let nextCharacterAt = performance.now() + 400;
+  const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
   setSeatSpeaking(id, 'thinking');
   const done = new Promise(r => { resolve = r; });
   paragraph.textContent = '';
   article.classList.add('is-streaming');
   article.setAttribute('aria-busy', 'true');
   const tick = () => {
-    const follow = conversation.scrollHeight - conversation.scrollTop - conversation.clientHeight < 90;
-    const instant = skipSpeech || matchMedia('(prefers-reduced-motion: reduce)').matches || document.hidden;
+    const instant = skipSpeech || reducedMotion.matches || document.hidden;
     if (!instant && performance.now() < nextCharacterAt) return;
+    if (!finished && shown === buffer.length) return;
+    const follow = conversation.scrollHeight - conversation.scrollTop - conversation.clientHeight < 90;
     shown = Math.min(buffer.length, instant ? buffer.length : shown + 1);
     const character = buffer[shown - 1] || '';
     nextCharacterAt = performance.now() + (/[。！？!?]/.test(character) ? 260 : /[，、；：,;:]/.test(character) ? 140 : 55);
@@ -251,7 +269,7 @@ function setSeatSpeaking(id, state = 'speaking') {
     const character = seat.querySelector('.character');
     if (character) {
       const target = state === 'thinking' && isThis ? 'thinking' : (state === 'speaking' && isThis ? 'speaking' : 'default');
-      character.src = character.dataset[target];
+      if (character.getAttribute('src') !== character.dataset[target]) character.src = character.dataset[target];
     }
     const statusEl = seat.querySelector('.seat-status');
     if (statusEl) statusEl.textContent = state === 'thinking' && isThis ? '● 正在思考' : '● 正在发言';

@@ -32,6 +32,10 @@ test('public server exposes only frontend assets and validates API input', async
     await Promise.race([once(child.stdout, 'data'), once(child, 'exit').then(() => { throw new Error('Server exited'); }), new Promise((_, reject) => { const t = setTimeout(() => reject(new Error('Startup timeout')), 5000); t.unref(); })]);
     for (const path of ['/', '/app.js', '/refinement.css', '/public/assets/single-roundtable.png']) assert.equal((await fetch('http://127.0.0.1:4273' + path)).status, 200, path);
     for (const path of ['/server.mjs', '/zhihu-client.mjs', '/.env', '/.git/config', '/deploy/kanshan.service', '/public/assets/../../server.mjs']) assert.equal((await fetch('http://127.0.0.1:4273' + path)).status, 404, path);
+    const imageResponse = await fetch('http://127.0.0.1:4273/public/assets/single-roundtable.png');
+    assert.equal(imageResponse.headers.get('cache-control'), 'public, max-age=3600');
+    await imageResponse.arrayBuffer();
+    assert.equal((await fetch('http://127.0.0.1:4273/app.js')).headers.get('cache-control'), 'no-store');
     assert.equal((await fetch('http://127.0.0.1:4273/api/roundtable?question=a')).status, 400);
     assert.equal((await fetch('http://127.0.0.1:4273/api/reply?message=a')).status, 400);
     assert.equal((await (await fetch('http://127.0.0.1:4273/api/health')).json()).configured, false);

@@ -28,3 +28,7 @@ public/assets/*
 !.env.example
 .deploy-local/
 _site/
+
+# Submission video is hosted on the demo server, not stored in Git.
+/看山圆桌演示视频.mp4
+/submission/demo.mp4

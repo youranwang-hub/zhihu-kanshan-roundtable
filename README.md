@@ -4,6 +4,8 @@
 
 ## 在线演示
 
+提交材料汇总：[作品材料页](https://roundtable.xiaoshixuji.xyz/submission/index.html)。视频介绍、Markdown 产品说明书、封面和 ICON 见该页；本地填写清单在 [submission/SUBMISSION.md](submission/SUBMISSION.md)。
+
 实时版：<https://roundtable.xiaoshixuji.xyz/>。前后端部署在 Ubuntu 服务器，支持真实知乎检索、三方立场生成和嘉宾追问；访客无需本机 CLI。
 
 GitHub Pages 部署完成后，访问：<https://youranwang-hub.github.io/zhihu-kanshan-roundtable/>

@@ -25,6 +25,59 @@ const debateLayout = document.querySelector('.debate-layout');
 const mentionPicker = document.querySelector('#mention-picker');
 const mentionChips = document.querySelectorAll('.mention-chip');
 const refreshButton = document.querySelector('#refresh-sources');
+const imageRequests = new WeakMap();
+const failedImages = new Map();
+const retryArt = document.querySelector('#retry-art');
+function updateArtStatus() { retryArt.classList.toggle('is-hidden', failedImages.size === 0); }
+async function setSceneImage(element, source, force = false) {
+  if (!source) return;
+  const url = new URL(source, document.baseURI).href;
+  if (!force && imageRequests.get(element)?.url === url) return;
+  const request = { url };
+  imageRequests.set(element, request);
+  if (!force && element.src === url && element.complete && element.naturalWidth) {
+    failedImages.delete(element);
+    updateArtStatus();
+    return;
+  }
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (attempt) await new Promise(resolve => setTimeout(resolve, attempt * 800));
+    if (imageRequests.get(element) !== request) return;
+    try {
+      const loaded = new Image();
+      loaded.decoding = 'async';
+      await new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => { loaded.onload = loaded.onerror = null; loaded.removeAttribute('src'); reject(new Error('IMAGE_TIMEOUT')); }, 12000);
+        loaded.onload = () => { clearTimeout(timeout); resolve(); };
+        loaded.onerror = () => { clearTimeout(timeout); reject(new Error('IMAGE_UNAVAILABLE')); };
+        loaded.src = url;
+      });
+      await loaded.decode();
+      if (imageRequests.get(element) !== request) return;
+      element.src = url;
+      failedImages.delete(element);
+      updateArtStatus();
+      return;
+    } catch { /* Preserve the visible pose while retrying a failed download. */ }
+  }
+  if (imageRequests.get(element) !== request) return;
+  imageRequests.delete(element);
+  failedImages.set(element, url);
+  updateArtStatus();
+}
+document.addEventListener('error', event => {
+  if (event.target instanceof HTMLImageElement && event.target.closest('.roundtable-scene, .kanshan-waiting')) {
+    const element = event.target;
+    if (!imageRequests.has(element)) setSceneImage(element, element.src);
+  }
+}, true);
+retryArt.addEventListener('click', () => {
+  for (const [element, url] of failedImages) setSceneImage(element, url, true);
+});
+window.addEventListener('online', () => retryArt.click());
+document.querySelectorAll('.roundtable-scene img').forEach(element => {
+  if (element.complete && !element.naturalWidth) setSceneImage(element, element.src);
+});
 const soundToggle = document.querySelector('#sound-toggle');
 let soundEnabled = false;
 try { soundEnabled = localStorage.getItem('kanshan-sound') === 'on'; } catch {}
@@ -164,8 +217,9 @@ function nextThought() {
   const thought = thoughts[thoughtIndex++ % thoughts.length];
   waitingCard.querySelector('.waiting-thought').textContent = thought;
   hostMessage.textContent = thought;
-  hostImage.src = thoughtIndex % 2 ? 'public/assets/kanshan-thinking.gif' : 'public/assets/kanshan-wave.gif';
-  waitingCard.querySelector('img').src = hostImage.src;
+  const pose = thoughtIndex % 2 ? 'public/assets/kanshan-thinking.gif' : 'public/assets/kanshan-wave.gif';
+  setSceneImage(hostImage, pose);
+  setSceneImage(waitingCard.querySelector('img'), pose);
 }
 waitingCard.querySelector('button').addEventListener('click', () => { nextThought(); playSound('thought'); });
 function startWaiting() {
@@ -214,7 +268,7 @@ function createWriter(article, id) {
     shown = Math.min(buffer.length, instant ? buffer.length : shown + 1);
     const character = buffer[shown - 1] || '';
     nextCharacterAt = performance.now() + (/[。！？!?]/.test(character) ? 260 : /[，、；：,;:]/.test(character) ? 140 : 55);
-    if (shown && !speaking) { speaking = true; setSeatSpeaking(id); if (!instant) playSound('speak'); hostMessage.textContent = `${roleNames[id]}正在发言，先听听这一席的理由。`; hostImage.src = 'public/assets/kanshan-wave.gif'; }
+    if (shown && !speaking) { speaking = true; setSeatSpeaking(id); if (!instant) playSound('speak'); hostMessage.textContent = `${roleNames[id]}正在发言，先听听这一席的理由。`; setSceneImage(hostImage, 'public/assets/kanshan-wave.gif'); }
     paragraph.textContent = buffer.slice(0, shown).join('');
     if (follow) conversation.scrollTop = conversation.scrollHeight;
     if (finished && shown === buffer.length) {
@@ -269,14 +323,14 @@ function setSeatSpeaking(id, state = 'speaking') {
     const character = seat.querySelector('.character');
     if (character) {
       const target = state === 'thinking' && isThis ? 'thinking' : (state === 'speaking' && isThis ? 'speaking' : 'default');
-      if (character.getAttribute('src') !== character.dataset[target]) character.src = character.dataset[target];
+      setSceneImage(character, character.dataset[target]);
     }
     const statusEl = seat.querySelector('.seat-status');
     if (statusEl) statusEl.textContent = state === 'thinking' && isThis ? '● 正在思考' : '● 正在发言';
   });
   if (id && lines[id]) {
     hostMessage.textContent = lines[id];
-    hostImage.src = state === 'thinking' ? 'public/assets/kanshan-thinking.gif' : 'public/assets/kanshan-wave.gif';
+    setSceneImage(hostImage, state === 'thinking' ? 'public/assets/kanshan-thinking.gif' : 'public/assets/kanshan-wave.gif');
   }
 }
 
@@ -297,7 +351,7 @@ function updateRoundGuide() {
   userSeat.classList.toggle('is-speaking', !observer && !busy && !completed && round > 1);
   document.querySelector('.seat-legend').textContent = observer ? '三种立场 · 你在旁听' : '三种立场 · 你的第四席';
   document.querySelector('.roundtable-scene').classList.toggle('is-observer', observer);
-  hostImage.src = busy || loadingPlan ? 'public/assets/kanshan-thinking.gif' : 'public/assets/kanshan-wave.gif';
+  setSceneImage(hostImage, busy || loadingPlan ? 'public/assets/kanshan-thinking.gif' : 'public/assets/kanshan-wave.gif');
 }
 
 function selectSeat(id) {
@@ -436,7 +490,7 @@ roundSteps.forEach((step) => step.addEventListener('click', () => {
 }));
 document.querySelector('#toggle-host').addEventListener('click', () => {
   hostMessage.textContent = '刘看山提醒：先理解对方最强的论据，再提出你的质疑。';
-  hostImage.src = 'public/assets/kanshan-wave.gif';
+  setSceneImage(hostImage, 'public/assets/kanshan-wave.gif');
 });
 focusButton.addEventListener('click', () => {
   const scene = document.querySelector('.roundtable-scene');

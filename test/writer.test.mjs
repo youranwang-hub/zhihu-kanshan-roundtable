@@ -16,7 +16,7 @@ test('writer avoids layout reads while waiting and completes without changing sp
     document: { hidden: false }, skipSpeech: false,
     conversation: { get scrollHeight() { reads++; return 100; }, scrollTop: 0, clientHeight: 100 },
     setSeatSpeaking: (...state) => states.push(state), playSound: () => {},
-    roleNames: { a: '嘉宾' }, hostMessage: {}, hostImage: {},
+    roleNames: { a: '嘉宾' }, hostMessage: {}, hostImage: {}, setSceneImage() {},
     setInterval: callback => { tick = callback; return 1; }, clearInterval: () => {},
     article: { querySelector: () => paragraph, classList: { add() {}, remove() {} }, setAttribute() {} },
   });

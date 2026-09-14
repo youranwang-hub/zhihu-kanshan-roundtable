@@ -47,7 +47,7 @@
 
       <div class="debate-layout is-hidden">
       <section class="roundtable-scene" aria-label="看山圆桌场景">
-        <div class="scene-stage"><img class="table-art" src="public/assets/single-roundtable.png" alt="圆桌" />
+        <div class="scene-stage"><img class="table-art" src="public/assets/single-roundtable.png" fetchpriority="high" alt="圆桌" />
         <div class="wall-grain"></div>
         <div class="wall-lamp lamp-left" aria-hidden="true"></div>
         <div class="wall-lamp lamp-right" aria-hidden="true"></div>
@@ -99,6 +99,7 @@
           <button type="button" id="toggle-host">刘看山提示</button>
           <button type="button" id="focus-mode">聚焦发言者</button>
           <button type="button" id="sound-toggle" aria-pressed="false" title="轻量提示音，不含语音朗读">开启音效</button>
+          <button type="button" id="retry-art" class="is-hidden" aria-live="polite">重新加载素材</button>
         </div>
       </section>
 
